@@ -1,0 +1,373 @@
+---
+title: "Homework 2 - Logistic Regression"
+output: html_notebook
+---
+
+
+For each individual, we collect, its Age, its Gender and the Brand he prefers, either M1 or M2.
+The aim of the study is to assess the impact of Age and Gender on the preference for a brand.
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(FactoMineR)
+```
+
+```{r}
+brand <- read.csv("brand.csv")
+brand <- brand[,2:4]
+```
+
+
+```{r}
+View(brand)
+summary(brand)
+dim(brand)
+names(brand)
+head(brand)
+```
+
+#Q2: Model
+
+We could use a logistic regression in order to assess the impact of Age and Gender on the preference for M1 or M2 because the output (the brand) is a categorical variable that could be modelized by a bernouli law.
+
+We therefore consider in this model that the Age and Gender (X, the inputs) are fixed, while the Brand, what we want to be able to predict for an individual, is Random.
+
+```{r}
+brand_glm <-glm(Brand ~ Gender + Age, family = binomial, data = brand)
+names(brand_glm)
+df<- as.data.frame(brand_glm$y)
+colnames(df) <- "glmY"
+brandy <- cbind(brand,df)
+```
+
+```{r}
+brandy %>% dplyr::select(Brand, glmY) %>% distinct()
+```
+
+In the glm function, 0 is for M1 and 1 is for M2.
+
+```{r}
+summary(brand_glm)
+```
+
+Age is the most significant variable to explain the preference for M1 or M2, but Gender is still very significant as well. The p-values are very small<< 0.05
+
+#Q3 Maximum Likelihood
+
+In the glm outputs, the maximum likelihood is given under the vector "coefficients".
+
+```{r}
+brand_glm$coefficients
+```
+Here, the parameters estimated by MLE are:
+
+g(pi) = -0.54 x GenderM + 0.40 x Age - 12.21
+
+where :
+- g is the logit link function
+- pi = P(Yi =1 | Xi)
+- Yi = 1 if the prefered brand of the individual i is M2, 0 otherwise
+- Xi = Age and Gender of the individual i
+
+
+#Q4: relationship between age and brand preference
+
+First, a simple plot to understand the distribution of the Brand according to the Age of a person.
+
+```{r}
+ggplot(data = brand,
+       aes(x = Brand, y = Age)) +
+  geom_boxplot() +
+  ggtitle("relationship between Age and Brand preference")
+```
+We can see that there is a correlation between the Age and the Brand preference (older people seem to like more M2 than M1)b
+
+Now let us run a Fisher test to assess the significance of the correlation between Age and Brand.
+We test here :
+H0 = "µ0 = µ1, the mean of the Age doesn't vary accross the 2 categories of Brand (M1 or M2)"
+against H1 = "µ0 != µ1"
+
+```{r}
+brandAge <- lm(Age ~ Brand, data= brand)
+summary(brandAge)
+```
+
+With the lm function, the pvalue of the Fisher test is << 0.001, which means that it is very significant, we can therefore reject H0 with a high confidence. The relationship between the Age and the Brand preference is very correlated.
+
+
+_Retrieve the pvalue_
+
+```{r}
+# first, let's test the equality of variance in Age knowing the prefered brand M1 or M2
+var.test(brand$Age ~ brand$Brand, conf.level=.95)
+#p-value significative : the variances for Age are not equal in the 2 groups M1 and M2  
+       
+# therefore the t.test will do a Welch Test:
+t.test(Age ~ Brand, alternative = 'two.sided', conf.level = .95, var.equal = FALSE, data = brand)
+```
+
+The p-value found performing a t.test is in the same scale as the one found performing a linear regression on Age according to Brand.
+In the t.test, we are comparing the means of Age in the 2 groups (people prefering M1 and people prefering M2).
+
+
+#Q5:coefficient for the age :
+
+We go back to the logistic regression on all variables here in order to have a more complete model.
+
+```{r}
+brand_glm$coefficients[3]
+```
+
+The coefficient for Age is Beta2 = 0.40, which means that the impact of Age on the Brand preference is positive : the older the individual i is, the higher will be P(Yi=1 | Xi), so the individual i will be more likely to prefer M2.
+
+_Confidence interval for the Odd-Ratio for Age_
+
+log(OR)= Beta2 therefore OR =exp(Beta2)
+
+```{r}
+# confidence interval for Beta2
+intBeta <- confint(brand_glm, "Age", level = 0.95)
+intBeta
+
+# confidence interval for OR (Age)
+
+intOR <- exp(intBeta)
+intOR
+
+```
+
+
+
+```{r}
+library(fBasics)
+coef = unname(brand_glm$coefficients[3])
+min = coef - pnorm(0.975)*stdev(brand$Age)
+max = coef + pnorm(0.975)*stdev(brand$Age)
+
+# interval confidence for Beta2
+Cbeta <- c(min,max)
+Cbeta
+
+# interval confidence for OR (Age)
+
+COR <- c(exp(min),exp(max))
+COR
+```
+
+#Q6 : Probability of prefering the brand M2 for a women aged 34
+
+```{r}
+women_34 <- data.frame(matrix("F",ncol=1,byrow = TRUE))
+Age_34 <- data.frame(matrix(34,ncol=1,byrow = TRUE)) # en deux fois car matrix ne prend qu'un seul type
+women_34 <- cbind(women_34, Age_34)
+colnames(women_34) <- c("Gender","Age")
+
+prob <- predict(brand_glm,newdata=women_34,type="response")
+v = 0
+if(prob>0.5){
+  v = "M2"
+} else {
+  v = "M1"
+}
+  
+print(paste("the estimated probability of prefering brand M2 is", prob, "therefore the predicted prefered brand is", v))
+```
+
+#Q7 : Difference between men and women
+
+First, let us perform a Chi-square Test to see if there is a significant relationship between Gender and Brand preference.
+
+```{r}
+library(MASS) 
+M = table(brand$Gender, brand$Brand)
+chisq.test(M)
+```
+
+The p-value of the test is < 0.01 so we can assess that there is a correlation between Gender and Brand.
+
+Can we see this difference between men and women in a plot ?
+
+```{r}
+ggplot(data = brand,
+       aes(x = brand$Gender, y = brand$Brand )) +
+  geom_jitter() + 
+  ggtitle("Relationship between Gender and Brand")
+
+```
+
+In the graph :
+- Women seem to prefer M2
+- the more women than men prefer M2
+
+Appart from these suppositions, the graph doesn't allow us to draw conclusions because the dots are similarly distributed in each group of Gender and Brand.
+
+```{r}
+C <- matrix(nrow = 2, ncol =2)
+C[1,1] = M[1,1]/(M[1,1] + M[1,2])
+C[1,2] = M[1,2]/(M[1,1] + M[1,2])
+C[2,1] = M[2,1]/(M[2,1] + M[2,2])
+C[2,2] = M[2,2]/(M[2,1] + M[2,2])
+
+colnames(C) <- colnames(M)
+rownames(C) <- rownames(M)
+C
+```
+From the population point of view :
+- both groups men and women prefer the brand M2, but women prefer it more than men
+- 64% of the women prefer the brand M2
+- while 51% of the men prefer the brand M2.
+
+```{r}
+D <- matrix(nrow = 2, ncol =2)
+D[1,1] = M[1,1]/(M[1,1] + M[2,1])
+D[2,1] = M[2,1]/(M[1,1] + M[2,1])
+D[1,2] = M[1,2]/(M[1,2] + M[2,2])
+D[2,2] = M[2,2]/(M[1,2] + M[2,2])
+
+colnames(D) <- colnames(M)
+rownames(D) <- rownames(M)
+D
+```
+
+From the point of view of the brand, on the other side:
+- 55% of the M1 "loyal customers" (people prefering M1) are men
+- 67% of the M2 "loyal customers" (people prefering M2) are women
+
+#Q8 : With your model, is it possible to know if the effect of Age on the preferences is the same for both men and women? If not suggest and fit a solution to answer this question.
+
+We did a multinomial regression with the function glm, based on all the variables in the dataset. The model takes therefore into account the interaction between all the variables, and not only the interaction between the variables one by one and the output. Nevertheless, the output of the glm function is a linear relationship between all the covariates at once, and doesn't allow us to make a differenciation between categories of variables.
+
+To compare the effect of Age on the preference for men and for women, we could separate the population in 2 groups based on gender, and then run a logistic regression on both groups.
+
+
+```{r}
+brandM <- brand %>% dplyr::filter(Gender == "M") %>% dplyr::select(Brand, Age)
+brandM_glm <- glm(Brand ~ Age, family = binomial, data = brandM)
+summary(brandM_glm)
+
+brandF <- brand %>% dplyr::filter(Gender == "F") %>% dplyr::select(Brand, Age)
+brandF_glm <- glm(Brand ~ Age, family = binomial, data = brandF)
+summary(brandF_glm)
+
+```
+
+We can see that the logistic regression gives quite similar results in both groups Men and Women:
+
+The coefficients and intercept are of the same scale, the impact of Age is positive and of the same scale in both groups :
+- for men : Brand = -14.67 + 0.45*Age
+- for women : Brand = -10.96 + 0.35*Age
+
+The intercept is a little higher for women, which could mean that the impact of Age could happen earlier for women.
+
+The p-value is a very little higher for men than for women : 4.21e-06 compared to 1.90e-06, but the difference is not enough to assess that Age doesn't have the same impact on the brand preference.
+
+
+
+#Q9: To compare the effect of age on the probability to prefer a brand, you could also represent graphically for each Gender the probability of selecting Brand 2 as a function of Age. Comment such a representation.
+ 
+```{r}
+proba <- as.data.frame(predict(brand_glm, type = "response"))
+colnames(proba) <- "Probability"
+resdata <- cbind(brand, proba, as.numeric(brand$Brand) - 1)
+colnames(resdata)[ncol(resdata)] <- "M2"
+
+ggplot(resdata,
+       aes(x = Age, y = Probability, color = Gender)) +
+  geom_line() +
+  ylim(0,1) +
+  geom_line(y= 0.5, color = "black")+
+  geom_point(aes(x = Age, y = M2, color = Gender))+
+  ggtitle("Probability to choose M2 in function of the Age")
+
+```
+
+On the whole graph, the probability to prefer M2 betwween the 2 brands is higher for women than for men. But the probability has the same distribution in both groups, which means that the impact of Age on the brand preference is the same in both groups : the older people get, the more likely they will prefer M2 compared to M1.
+The threshold for women is around 30 to 31 years old, while it's around 32 years old for men.
+
+#Q10 : Comparison of 2 regression models
+
+```{r}
+reg.init <- glm(Brand ~ 1, data = brand, family = "binomial")
+summary(reg.init)
+```
+
+
+```{r}
+anova(reg.init, brand_glm, test = "LR")
+```
+
+_Retrieve the values given in ANOVA output_
+
+```{r}
+#Residual deviance
+d1 <- -2*logLik(reg.init)  #reg.init$deviance
+d2 <- -2*logLik(brand_glm)  #brand_glm$deviance
+
+
+#Value of the test statistic
+v <- d1 - d2
+
+#p-value
+p <- pchisq(v, df = 2, lower.tail = FALSE) # fonction Chi2 appliquée à la valeur du test statistique (déviance 1 - déviance2)
+
+#degrees of freedom 
+df <- reg.init$df.residual - brand_glm$df.residual
+
+print(cat("The value of the test between the 2 models is :", v,"\nThe residual deviances are:", d1, d2,"\nThe p-value of the test is :", p, "\nThe degree of freedom is :", df, "\n"))
+```
+
+
+#Q11: 
+
+Another way to compare the models would be to draw the ROC curve, and then calculate the AUC for each model, and compare them to assess the predictability of both models.
+
+_reg.init model_
+
+
+```{r}
+library(ROCR)
+p <- predict(reg.init, type = "response")
+pr <- prediction(p, brand$Brand)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf, colorize = FALSE, main = "ROC for the init model")
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+_Multinomial logistic regression_
+
+```{r}
+p <- predict(brand_glm, type = "response")
+pr <- prediction(p, brand$Brand)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf, colorize = FALSE, main = "ROC for the init model")
+
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+
+```
+
+
+Conclusion :
+
+A good shape for a ROC curve is a curve with a good transitivity and a low specificity. The highest the Area under the curve is, the better (closest to 1).
+The AUC of the multivariate logistic regression model is higher (0.69) that the reg.init one (0.5). The prediction is therefore better in the multivariate logistic regression, which is not a surprise because the reg.init model is only based on the distribution of the variable Brand not taking into account the variables Age and Gender. This also explains why the AUC is exacly 0.5 : the model predicts well half of the time and doesn't the other half.
+
+
+
+```{r}
+
+plot(density.default(x=(data %>% dplyr::filter(Maturity ==1))$) 
+
+
+```
+
+
+
+
